@@ -1,0 +1,9 @@
+janus-env/
+__pycache__/
+*.log
+*.csv
+*.npz
+*.bak
+*.out
+ingester6.py.G*
+.wd_stamp

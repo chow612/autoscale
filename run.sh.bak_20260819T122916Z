@@ -1,0 +1,22 @@
+#!/bin/sh
+D=/home/chau/quant-engine
+cd "$D" || exit 1
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+export JANUS_UCL=50.0334
+export JANUS_DTHR=24.9689,6.5488,6.9570,6.8484,27.9837,20.1079
+export JANUS_LATCH=6
+export JANUS_COOL=100
+export JANUS_BAND=0.2
+export JANUS_UNI_K=3.0
+export JANUS_UNI_K2=2.0
+export JANUS_FFT_KMIN=400
+export JANUS_FFT_TREND_MAX=3.0
+export JANUS_CALIB_TICKS=1200
+export JANUS_DCALIB_TICKS=1500
+export JANUS_EVAL_FILE=$D/eval.json
+export JANUS_DECIDE_CSV=$D/dec_${TS}.csv
+export VIRTUAL_ENV=$D/janus-env
+export PATH=$D/janus-env/bin:$PATH
+nohup "$D/janus-env/bin/python3" -u "$D/ingester6.py" > "$D/ing_${TS}.log" 2>&1 &
+echo "$(date -u +%FT%TZ) START pid=$! log=ing_${TS}.log csv=dec_${TS}.csv" >> "$D/run.log"
+echo "pid=$! log=ing_${TS}.log csv=dec_${TS}.csv"

@@ -1,0 +1,169 @@
+import sys
+from array import array
+import numpy as np
+
+DIMS=('cpu','ram','rps','err','asym','slow')
+DEPS=('balancereader','contacts','frontend','ledgerwriter','transactionhistory','userservice')
+DSET=set(DEPS)
+DTHR=np.array([12.4348,6.7844,8.0606,6.2051,13.2100,10.6277])
+DI={d:i for i,d in enumerate(DIMS)};PI={d:i for i,d in enumerate(DEPS)}
+W,TRMAX,UCL0,COOL=120,2.0,18.5652,100
+
+src=sys.argv[1]
+t2=array('d');trg=array('b');nv=array('i');pv=array('b');trv=array('d');nlv=array('b')
+dc=[array('d') for _ in range(6)]
+lad=array('b');lap=array('b');nline=array('b')
+ZF=array('d');Z36=array('d',[0.0]*36)
+zc=[0.0]*36
+ti=-1;nl_cur=0
+
+def snap():
+    b=ti*36
+    for k in range(36):ZF[b+k]=zc[k]
+
+for ln in open(src,'r',errors='replace'):
+    if ln.startswith('MEWMA '):
+        if ti>=0:snap();nline[ti]=nl_cur
+        w=ln.split()
+        t2.append(float(w[1][3:]));trg.append(1 if w[3][5:]=='True' else 0)
+        nv.append(int(w[4][2:]));pv.append(int(w[5][2:]));trv.append(float(w[6][3:]))
+        nlv.append(-1);lad.append(-1);lap.append(-2);nline.append(0)
+        for k in range(6):dc[k].append(float('nan'))
+        ZF.extend(Z36)
+        ti+=1;nl_cur=0
+    elif ti<0:continue
+    elif ln.startswith('  D '):
+        w=ln.split()
+        for k in range(6):dc[k][ti]=float(w[k+1].split('=')[1])
+        nlv[ti]=int(w[7][3:])
+    elif ln.startswith('  ATTR '):
+        w=ln.split()
+        lad[ti]=DI[w[1][4:]];lap[ti]=PI.get(w[5][4:],-1)
+    else:
+        w=ln.split()
+        if len(w)==8 and w[0] in DSET and w[7].startswith('z='):
+            j=PI[w[0]];v=w[7][2:].split('/')
+            for k in range(6):zc[k*6+j]=float(v[k])
+            nl_cur+=1
+if ti>=0:snap();nline[ti]=nl_cur
+
+n=ti+1
+T2=np.frombuffer(t2,dtype=np.float64);TR=np.frombuffer(trg,dtype=np.int8)
+N=np.frombuffer(nv,dtype=np.int32);P=np.frombuffer(pv,dtype=np.int8)
+TRC=np.frombuffer(trv,dtype=np.float64);NL=np.frombuffer(nlv,dtype=np.int8)
+D=np.vstack([np.frombuffer(c,dtype=np.float64) for c in dc]).T
+Z=np.frombuffer(ZF,dtype=np.float64).reshape(n,6,6)
+LD=np.frombuffer(lad,dtype=np.int8);LP=np.frombuffer(lap,dtype=np.int8)
+NLN=np.frombuffer(nline,dtype=np.int8)
+if len(sys.argv)>2:
+    _z=np.load(sys.argv[2])
+    assert _z['t2'].shape[0]==n,(_z['t2'].shape[0],n)
+    T2=_z['t2'];D=_z['d'];TRC=np.where(np.isfinite(_z['tr']),_z['tr'],TRC)
+    print('OVERRIDE %s n_ok=%d'%(sys.argv[2],int(np.isfinite(T2).sum())))
+
+print('dep_lines_per_tick',{int(k):int(v) for k,v in zip(*np.unique(NLN,return_counts=True))})
+
+ok=(P==6)&(N>=W)&(TRC<TRMAX)&np.isfinite(D).all(1)
+dim=D.argmax(1)
+wd=D[np.arange(n),dim]
+hasdim=wd>0.0
+sig=hasdim&(wd>DTHR[dim])
+za=np.abs(Z[np.arange(n),dim,:])
+mz=za.max(1);dep=za.argmax(1)
+hasdep=mz>0.0
+tie=(za==mz[:,None]).sum(1)>1
+key=np.where(ok&sig&hasdep,dim*6+dep,-1)
+
+v=TR==1
+md=(LD[v]!=np.where(hasdim[v],dim[v],-1))
+mp=(LP[v]!=np.where(sig[v]&hasdep[v],dep[v],-1))
+print('VALIDATE trig=%d mm_dim=%d mm_dep=%d  mm_dep_on_tie=%d mm_dep_no_tie=%d'%(
+    int(v.sum()),int(md.sum()),int(mp.sum()),int((mp&tie[v]).sum()),int((mp&~tie[v]).sum())))
+
+x=T2[(P==6)&(N>=W)&(TRC<TRMAX)&np.isfinite(T2)]
+QS=(0.90,0.95,0.975,0.99,0.995,0.999)
+UCLS=[('F-dist',UCL0)]+[('%g'%q,float(np.quantile(x,q))) for q in QS]
+LAT=(2,3,4,6,8,12,16,24)
+days=n*3.0/86400.0
+
+def runs(u):
+    k=np.where((T2>u)&ok,key,-1).astype(np.int64)
+    b=np.flatnonzero(np.r_[True,k[1:]!=k[:-1]])
+    L=np.diff(np.r_[b,len(k)]);V=k[b];s=V>=0
+    return b[s],L[s],V[s]
+
+def ev(b,L,V,lat,cool,kf=None):
+    last={};c=0;cf=0
+    for s,l,q in zip(b,L,V):
+        if l<lat:continue
+        t=s+lat-1
+        if cool and q in last and t-last[q]<cool:continue
+        last[q]=t;c+=1
+        if kf is not None and q==kf:cf+=1
+    return c,cf
+
+KF=DI['slow']*6+PI['frontend']
+for cool,tag in ((0,'1 su kien / run'),(COOL,'COOL=100')):
+    print('\nSU KIEN/NGAY  [%s]'%tag)
+    print('%-9s %-8s %-7s '%('ucl','q','trig%')+' '.join('L%-5d'%l for l in LAT))
+    for lbl,u in UCLS:
+        b,L,V=runs(u)
+        row=[];rf=[]
+        for l in LAT:
+            c,cf=ev(b,L,V,l,cool,KF);row.append('%-6.2f'%(c/days));rf.append('%-6.2f'%(cf/days))
+        print('%-9.4f %-8s %-7.3f '%(u,lbl,float(((T2>u)&ok).mean()))+' '.join(row))
+        print('%-9s %-8s %-7s '%('','  slow/fe','')+' '.join(rf))
+
+print('\nTOP CAP tai (ucl,latch) chon')
+for lbl,u in UCLS:
+    b,L,V=runs(u)
+    for l in (4,8):
+        cnt={}
+        last={}
+        for s,ll,q in zip(b,L,V):
+            if ll<l:continue
+            t=s+l-1
+            if q in last and t-last[q]<COOL:continue
+            last[q]=t;cnt[q]=cnt.get(q,0)+1
+        tp=sorted(cnt.items(),key=lambda kv:-kv[1])[:5]
+        print('%-8s ucl=%-8.2f L%-3d '%(lbl,u,l)+' '.join('%s/%s:%d'%(DIMS[k//6],DEPS[k%6],c) for k,c in tp))
+
+print('\nDTHR HIEU CHUAN LAI THEO TUNG UCL')
+base=(NL==6)&(TRC<TRMAX)&(P==6)&(N>=W)
+for lbl,u in UCLS:
+    m=base&(T2<=u)
+    nd=np.array([float(np.quantile(D[m,i],0.99)) for i in range(6)])
+    print('%-8s ucl=%-8.2f n=%-7d '%(lbl,u,int(m.sum()))+' '.join('%s=%.4f'%(DIMS[i],nd[i]) for i in range(6)))
+    sig2=hasdim&(wd>nd[dim])
+    key2=np.where(ok&sig2&hasdep,dim*6+dep,-1)
+    k=np.where((T2>u)&ok,key2,-1).astype(np.int64)
+    b=np.flatnonzero(np.r_[True,k[1:]!=k[:-1]]);L=np.diff(np.r_[b,len(k)]);V=k[b];s=V>=0
+    b,L,V=b[s],L[s],V[s]
+    out=[]
+    for l in (4,6,8,12):
+        c,cf=ev(b,L,V,l,COOL,KF)
+        out.append('L%d=%.2f(fe %.2f)'%(l,c/days,cf/days))
+    print('%-8s %-13s '%('','DTHR moi')+'  '.join(out))
+
+print('\nTACH MAU: hieu chuan nua dau, danh gia nua sau')
+h=n//2
+cal=np.zeros(n,bool);cal[:h]=True
+val=~cal
+mc=(P==6)&(N>=W)&(TRC<TRMAX)&np.isfinite(T2)
+for q in (0.95,0.99,0.995):
+    uc=float(np.quantile(T2[mc&cal],q))
+    uv=float(np.quantile(T2[mc&val],q))
+    bs=(NL==6)&(TRC<TRMAX)&(P==6)&(N>=W)&cal&(T2<=uc)
+    nd=np.array([float(np.quantile(D[bs,i],0.99)) for i in range(6)])
+    print('q=%-6g ucl_nua1=%.4f ucl_nua2=%.4f lech=%.1f%%  DTHR1='%(q,uc,uv,100.0*(uv-uc)/uc)
+          +','.join('%.4f'%v for v in nd))
+    s2=hasdim&(wd>nd[dim])
+    k2=np.where(ok&s2&hasdep,dim*6+dep,-1)
+    for tag,msk,dd in (('in-sample',cal,h*3.0/86400.0),('out-sample',val,(n-h)*3.0/86400.0)):
+        k=np.where((T2>uc)&ok&msk,k2,-1).astype(np.int64)
+        b=np.flatnonzero(np.r_[True,k[1:]!=k[:-1]]);L=np.diff(np.r_[b,len(k)]);V=k[b];s=V>=0
+        b,L,V=b[s],L[s],V[s]
+        out=[]
+        for l in (4,6,8):
+            c,cf=ev(b,L,V,l,COOL,KF);out.append('L%d=%.2f(fe %.2f) n=%d'%(l,c/dd,cf/dd,c))
+        print('   %-11s '%tag+'  '.join(out))
