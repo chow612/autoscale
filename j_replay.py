@@ -42,7 +42,7 @@ def _v(t):
 
 
 class Log:
-    __slots__=('n','res','dd','sd','mu','xx','zz','dz','live','trig','frz','t2','ucl',
+    __slots__=('n','mask','seen','res','dd','sd','mu','xx','zz','dz','live','trig','frz','t2','ucl',
                'tr','dw','cnt','pp','nl','calm','tuoi')
 
     def __init__(s):
@@ -52,11 +52,16 @@ class Log:
             setattr(s,a,bytearray())
         for a in ('cnt','pp','nl','calm','tuoi'):
             setattr(s,a,array.array('i'))
-        s.n=0
+        s.n=0;s.mask=0;s.seen=0
 
 
-def parse(path,limit=0):
+MASK_FULL=127
+MASK_LOOSE=7
+BITNM=('window','MEWMA','FFT','Z','SD','D','FRZstate')
+def parse(path,limit=0,loose=0):
     L=Log()
+    need=MASK_LOOSE if loose else MASK_FULL
+    L.mask=need;L.seen=0
     r=array.array('d',[0.0]*D6);dv=array.array('d',[0.0]*D6)
     sv=array.array('d',[0.0]*D6);mv=array.array('d',[0.0]*D6)
     xv=array.array('d',[0.0]*D6);zv=array.array('d',[0.0]*D6)
@@ -77,9 +82,10 @@ def parse(path,limit=0):
     f=open(path,'r',errors='replace')
     for ln in f:
         if ln[:3]=='---':
-            if st['have']==127:
+            if (st['have']&need)==need:
                 flush()
                 if limit and L.n>=limit:break
+            L.seen|=st['have']
             st['have']=0
             if ln[:10]=='--- window':
                 for t in ln.split():
@@ -127,8 +133,12 @@ def parse(path,limit=0):
                 j=DIDX[h];p=_v(t).split('/')
                 for i in range(D6):dz[i*ND+j]=float(p[i])
     else:
-        if st['have']==127:flush()
+        if (st['have']&need)==need:flush()
+    L.seen|=st['have']
     f.close()
+    if L.n==0:
+        mi=[BITNM[i] for i in range(7) if (need>>i&1) and not (L.seen>>i&1)]
+        raise RuntimeError('j_replay.parse: 0 tick tu %s ; can_mask=%d thay_mask=%d ; thieu loai dong: %s'%(path,need,L.seen,','.join(mi) if mi else '(du loai dong nhung khong tick nao du bo)'))
     return L
 
 
