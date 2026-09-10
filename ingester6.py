@@ -1,9 +1,9 @@
-import struct,time,array,asyncio,math,json,os,urllib.request,urllib.parse,urllib.error
+import struct,time,array,asyncio,math,json,os,hmac,hashlib,urllib.request,urllib.parse,urllib.error
 from contextlib import asynccontextmanager
 from collections import deque
 from fastapi import FastAPI,Request
 from starlette.responses import Response
-import cramjam,uvicorn,numpy as np
+import cramjam,uvicorn,numpy as np,httpx
 from scipy.stats import f as f_dist
 
 LISTEN_HOST='0.0.0.0'
@@ -19,7 +19,7 @@ EPS=1e-9
 EPS_L=1e-4
 MEWMA_DIM=6
 MEWMA_LAMBDA=0.2
-MEWMA_WINDOW=int(os.environ.get('JANUS_W','0') or 0) or 120
+MEWMA_WINDOW=int(os.environ.get('JANUS_W','0') or 0) or 240  # calibrate 20260828: FAR=1.0017% tai W=240
 MEWMA_ALPHA=0.01
 MEWMA_MIN_SAMPLES=max(MEWMA_DIM+1,30)
 MEWMA_RIDGE=1e-6
@@ -51,7 +51,23 @@ PG_POOL={'ledgerwriter':6,'balancereader':3,'transactionhistory':3}
 PG_BUDGET=91
 UNI_K=float(os.environ.get('JANUS_UNI_K','3.0') or 3.0)
 UNI_K2=float(os.environ.get('JANUS_UNI_K2','2.0') or 2.0)
-DTHR=array.array('d',[0.0]*MEWMA_DIM)
+
+# --- Actuation (worker1 -> webhook tren master) ---
+ACT_URL=os.environ.get('JANUS_ACT_URL','')          # vd http://master.internal:8443/scale ; rong = actuation tat, chi DRYRUN
+ACT_SECRET=os.environ.get('JANUS_ACT_SECRET','').encode()
+ACT_TIMEOUT=float(os.environ.get('JANUS_ACT_TIMEOUT','0') or 0) or 5.0
+ACT_FAIL_MAX=int(os.environ.get('JANUS_ACT_FAIL_MAX','0') or 0) or 3
+# Warmup rieng cho actuation, TACH BIET voi 'warm' (dung cho cac tinh toan thong ke noi bo khac,
+# khong dung cho gate nay). Ly do 3W thay vi W: can it nhat 1 vong cua so day (W) de day het
+# du lieu cold-start ra khoi rolling window, cong them bien do an toan de 6 chieu hoi tu (2W van
+# con rui ro cao chua hoi tu). Khong dung F-distribution de tu dieu chinh UCL vi metric khong IID.
+ACT_WARMUP_TICKS=int(os.environ.get('JANUS_ACT_WARMUP_TICKS','0') or 0) or (3*MEWMA_WINDOW)
+ACT_ENABLED=bool(ACT_URL) and bool(ACT_SECRET)
+act_fail=array.array('i',[0]*NDEP)     # so lan fail LIEN TIEP, theo tung dependency
+act_disabled=bytearray(NDEP)           # kill-switch rieng tung dependency, 1 = tat actuation cho dep do
+http_client=None                       # tao trong lifespan(), dung chung 1 AsyncClient cho ca doi script
+DTHR_DEFAULT=(24.8372,6.6410,11.5795,7.0127,26.4767,21.2709)  # calibrate 20260828, W=240 FRZ=1 UCL=58.7343 FAR=1.0017%
+DTHR=array.array('d',DTHR_DEFAULT)
 _dts=os.environ.get('JANUS_DTHR','')
 if _dts:
     _dtp=_dts.split(',')
@@ -250,7 +266,7 @@ def p99_from_buckets(bd):
     return low_le,1
 
 SF2=np.frombuffer(SIGMA_FLOOR2,dtype=np.float64)
-UCL_FIX=float(os.environ.get('JANUS_UCL','0') or 0)
+UCL_FIX=float(os.environ.get('JANUS_UCL','0') or 0) or 58.7343  # calibrate 20260828, W=240
 UCL_CACHE={}
 def ucl_for(n,p):
     if p<1 or n<=p+1:return float('inf')
@@ -896,6 +912,44 @@ def pct(a,q):
     if not len(a):return float('nan')
     return float(np.percentile(np.frombuffer(a,dtype=np.float64),q))
 
+async def actuate(dep_idx,dep_name,namespace,cur,desired):
+    """Goi webhook tren master de patch spec.replicas. Tra ve (ok, applied_from, applied_to).
+    ok=False nghia la KHONG duoc coi la da hanh dong (dec_cool/dec_act o cho goi KHONG duoc set).
+    Neu dep_idx dang bi kill-switch (act_disabled) thi khong goi mang, tra ve False ngay (van la DRYRUN)."""
+    if not ACT_ENABLED:
+        return False,None,None
+    if act_disabled[dep_idx]:
+        print(f'  ACT skip dep={dep_name} ly_do=killswitch fail_lien_tiep={act_fail[dep_idx]}')
+        return False,None,None
+    body=json.dumps({'namespace':namespace,'deployment':dep_name,'desired':desired,'expected_cur':cur},
+                     separators=(',',':')).encode()
+    sig=hmac.new(ACT_SECRET,body,hashlib.sha256).hexdigest()
+    try:
+        r=await http_client.post(ACT_URL,content=body,
+                                  headers={'Content-Type':'application/json','X-Signature':sig},
+                                  timeout=ACT_TIMEOUT)
+    except (httpx.TimeoutException,httpx.TransportError) as e:
+        act_fail[dep_idx]+=1
+        print(f'  ACT fail dep={dep_name} loi=network detail={e!r} fail_lien_tiep={act_fail[dep_idx]}/{ACT_FAIL_MAX}')
+    else:
+        if r.status_code==200:
+            try:
+                data=r.json()
+            except ValueError:
+                data={}
+            act_fail[dep_idx]=0
+            frm=data.get('from');to=data.get('to')
+            if frm is not None and frm!=cur:
+                print(f'  ACT MISMATCH dep={dep_name} cur_noi_bo={cur} cur_that_tu_master={frm} - dec_rep dang lech, xem lai attribution')
+            print(f'  ACT ok dep={dep_name} namespace={namespace} desired={desired} applied_from={frm} applied_to={to}')
+            return True,frm,to
+        act_fail[dep_idx]+=1
+        print(f'  ACT fail dep={dep_name} loi=http_{r.status_code} body={r.text[:200]!r} fail_lien_tiep={act_fail[dep_idx]}/{ACT_FAIL_MAX}')
+    if act_fail[dep_idx]>=ACT_FAIL_MAX and not act_disabled[dep_idx]:
+        act_disabled[dep_idx]=1
+        print(f'  KILLSWITCH dep={dep_name} sau {act_fail[dep_idx]} lan fail lien tiep - TAT actuation cho dep nay, chi con log DRYRUN. Can can thiep thu cong roi restart de bat lai.')
+    return False,None,None
+
 async def flush_loop():
     global ring_read,epoch,ram_prev,ram_init,prev_mono,prev_tA,prev_tB,THR_A,THR_B,dec_key,dec_run,dec_cool,dec_fh,dec_st
     while True:
@@ -1259,9 +1313,25 @@ async def flush_loop():
                 else:act='hold'
             if dec_st==2:act='alert_sdf';des=cur
             elif dec_st==3:act='alert_ddos';des=cur
-            if act in ('scale_out','scale_in','capped'):dec_cool=DEC_COOL
-            if FRZ_ACT and act in ('scale_out','scale_in'):dec_act[0]=1
-            print(f'  DECIDE dep={nm} dim={DIMS[wi]} cur={cur} desired={des} max={mx} capr={capr:.2f} rps={d_rps[wdep]:.1f} run={dec_run} act={act} tax={dec_st} dcc={router.out} DRYRUN')
+            # Chi thuc su goi webhook khi co delta that (des!=cur). 'capped' van co the la
+            # scale that (chi bi gioi han bien do), nhung neu mx khong doi va da o mx roi
+            # thi des==cur -> khong goi mang, khong ton cooldown oan (khac hanh vi cu).
+            in_warmup=mewma.count<ACT_WARMUP_TICKS
+            will_act=act in ('scale_out','scale_in','capped') and des!=cur and not in_warmup
+            acted=False
+            if will_act:
+                acted,m_from,m_to=await actuate(wdep,nm,NS_FILTER,cur,des)
+            if acted:
+                dec_cool=DEC_COOL
+                if FRZ_ACT and act in ('scale_out','scale_in'):dec_act[0]=1
+                tag='ACTUATED'
+            elif in_warmup and act in ('scale_out','scale_in','capped') and des!=cur:
+                tag=f'DRYRUN(warmup {mewma.count}/{ACT_WARMUP_TICKS})'
+            elif will_act:
+                tag='ACT_FAILED (khong cooldown, se thu lai epoch sau)'
+            else:
+                tag='DRYRUN' if ACT_ENABLED else 'DRYRUN(act_url_trong)'
+            print(f'  DECIDE dep={nm} dim={DIMS[wi]} cur={cur} desired={des} max={mx} capr={capr:.2f} rps={d_rps[wdep]:.1f} run={dec_run} act={act} tax={dec_st} dcc={router.out} {tag}')
             if DEC_CSV:
                 if dec_fh is None:
                     dec_fh=open(DEC_CSV,'a',buffering=1)
@@ -1292,10 +1362,17 @@ async def flush_loop():
 
 @asynccontextmanager
 async def lifespan(app):
+    global http_client
+    http_client=httpx.AsyncClient()
+    if ACT_ENABLED:
+        print(f'  ACT enabled url={ACT_URL} timeout={ACT_TIMEOUT}s fail_max={ACT_FAIL_MAX}')
+    else:
+        print('  ACT disabled (JANUS_ACT_URL/JANUS_ACT_SECRET rong) - chi DRYRUN, khong bao gio goi mang thuc actuation')
     t1=asyncio.create_task(flush_loop())
     t2=asyncio.create_task(fft_slow())
     yield
     t1.cancel();t2.cancel()
+    await http_client.aclose()
 
 app=FastAPI(lifespan=lifespan)
 
