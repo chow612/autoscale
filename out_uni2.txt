@@ -1,0 +1,9 @@
+SCRIPT j_uni2_20260828.py md5=271d775b7d9ef25d5a0515e78c375811 dong=97
+W=240 UCL=58.7343  FAR(T2)=1.0017%   K*=2.0748  FAR(UNI)=1.0017%
+tieu chi: UNI bat <=> ton tai tick trong [bat-16, bat+16] co max|z| > K*
+
+gio_UTC              tick    chieu  dich_vu             T2      max|z|_dinh  UNI
+2026-08-27T06:33:25Z  206240  cpu    userservice         319.9   7.7985       BAT
+2026-08-27T06:38:25Z  206340  cpu    userservice         284.0   5.8727       BAT
+
+=> UNI bat 2/2 su kien ma T2 bat (o cung ti le bao dong)

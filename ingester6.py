@@ -1,6 +1,6 @@
 import struct,time,array,asyncio,math,json,os,hmac,hashlib,urllib.request,urllib.parse,urllib.error
 from contextlib import asynccontextmanager
-from collections import deque
+from collections import deque, Counter
 from fastapi import FastAPI,Request
 from starlette.responses import Response
 import cramjam,uvicorn,numpy as np,httpx
@@ -19,7 +19,8 @@ EPS=1e-9
 EPS_L=1e-4
 MEWMA_DIM=6
 MEWMA_LAMBDA=0.2
-MEWMA_WINDOW=int(os.environ.get('JANUS_W','0') or 0) or 240  # calibrate 20260828: FAR=1.0017% tai W=240
+MEWMA_WINDOW=int(os.environ.get('JANUS_W','0') or 0) or 240  # W=240 xac nhan lai 20260913 (FAR=0.9932%, xem chu thich DTHR_DEFAULT)
+DEC_DEBUG=int(os.environ.get('JANUS_DEC_DEBUG','0') or 0)  # 1 = in wi/wdepa/dkey moi epoch, debug tam thoi
 MEWMA_ALPHA=0.01
 MEWMA_MIN_SAMPLES=max(MEWMA_DIM+1,30)
 MEWMA_RIDGE=1e-6
@@ -42,6 +43,12 @@ FRZ_MAX=int(os.environ.get('JANUS_FRZ_MAX','0') or 0) or 400
 FRZ_DEP=int(os.environ.get('JANUS_FRZ_DEP','1') or '1')
 FRZ_ACT=int(os.environ.get('JANUS_FRZ_ACT','0') or 0)
 DEC_LATCH=int(os.environ.get('JANUS_LATCH','16') or 16)
+# 2026-09-15: nang GIA TRI TAM tu 1 len 2 (theo yeu cau) - nghia la 3 tick lien tiep khong trig
+# moi reset (thay vi 2 truoc do). CAN DO LAI CHINH THUC bang cach thong ke do dai episode dip
+# that (vd tu log actuate that + video cadvisor/k6 xung quanh cac lan scale) truoc khi dua vao
+# bao cao, giong huong da lam voi M-of-N truoc do (j_monN_sweep.py) - KHONG duoc coi day la gia
+# tri final, van chi la chinh tay tam thoi.
+JANUS_MISS_TOL=int(os.environ.get('JANUS_MISS_TOL','2') or 2)
 DEC_COOL=int(os.environ.get('JANUS_COOL','100') or 100)
 DEC_BAND=float(os.environ.get('JANUS_BAND','0.2') or 0.2)
 DEC_CSV=os.environ.get('JANUS_DECIDE_CSV','')
@@ -66,13 +73,58 @@ ACT_ENABLED=bool(ACT_URL) and bool(ACT_SECRET)
 act_fail=array.array('i',[0]*NDEP)     # so lan fail LIEN TIEP, theo tung dependency
 act_disabled=bytearray(NDEP)           # kill-switch rieng tung dependency, 1 = tat actuation cho dep do
 http_client=None                       # tao trong lifespan(), dung chung 1 AsyncClient cho ca doi script
-DTHR_DEFAULT=(24.8372,6.6410,11.5795,7.0127,26.4767,21.2709)  # calibrate 20260828, W=240 FRZ=1 UCL=58.7343 FAR=1.0017%
+
+# --- M-trong-N latch (thay the DEC_LATCH consecutive-only), them 2026-09-11 ---
+# Tam thoi M=8 (JANUS_MON_M), N=16 (JANUS_MON_N) - CHUA calibrate chinh thuc duoi W=240,
+# chi la gia tri tam dung de chay production thu thap log that, roi sweep lai bang
+# j_monN_sweep.py tren log moi truoc khi trich vao bao cao (xem ghi chu run.sh).
+# --- Latch RIENG TUNG DEPENDENCY (final - dung cach dung, thay ban per-dim tam truoc do), 2026-09-12 ---
+# 6 bo dem doc lap, 1/DEPENDENCY (key_run[NDEP]) - vi hanh dong cuoi cung (kubectl patch scale)
+# nham vao 1 deployment cu the, nen ban than counter phai gan lien voi deployment do, khong phai
+# voi metric. Moi dependency tu kiem tra CA 6 metric (dim) doc lap: metric nao co dep_z vuot
+# UNI_K thi tinh la dependency do dang bat thuong tick nay (KHONG con dung 1 dimension thang
+# cuoc toan cuc wi/sg nua - do la nguon bug cu: dependency co the bat thuong that o dim X nhung
+# bi kiem tra sai o dim Y do wi toan cuc roi vao dep khac day len, hoac bi reset oan khi sg=False
+# toan cuc du van dang vuot nguong o 1 dim rieng cua no). key_run[j] CHI reset ve 0 khi KHONG con
+# metric nao cua dung dependency j vuot UNI_K tai tick do (khong dung 'trig'/'sg' toan cuc lam
+# dieu kien reset nua). key_run_dim[j] nho lai metric nao (trong so 6) gay ra latch cho dung
+# dependency j, dung thay cho wi chung khi actuate (DTHR lookup/capacity/hold_dim/DB-group).
+# Chuyen "metric nao dang bat thuong" chi la du lieu noi bo cua MEWMA de phuc vu buoc nay -
+# khong lien quan gi DCC-GARCH (block do xu ly correlation stress rieng, ra router.out/state
+# rieng, khong dung de attribute dim actuation).
+key_run=array.array('i',[0]*NDEP)   # so lan lien tiep dependency do vuot nguong (rieng tung dep)
+key_run_dim=array.array('i',[-1]*NDEP)  # metric (dim) gay ra latch hien tai, RIENG TUNG dep (khong dung chung wi nua)
+key_miss=array.array('i',[0]*NDEP)  # so tick LIEN TIEP khong trig (rieng tung dep), dung cho grace-miss (JANUS_MISS_TOL)
+key_cool=array.array('i',[0]*NDEP)  # cooldown rieng tung dependency (khong dung chung 1 bien nua)
+GROUP_LEDGER=frozenset(DEP_LIST.index(d) for d in ('ledgerwriter','balancereader','transactionhistory'))
+GROUP_ACCOUNTS=frozenset(DEP_LIST.index(d) for d in ('userservice','contacts'))
+DTHR_DEFAULT=(27.2729,7.2229,17.5649,7.3396,30.5676,28.6583)  # calibrate 20260913, W=240 FRZ=1
+# UCL=138.8896 FAR=0.9932% (hoi tu bisection duoi FRZ=1, xem CANH BAO ben duoi). Replay tu log
+# lich su ing_20260820T023433Z.log (611082 tick, topology co dinh 5 replica/dep SUOT ca file -
+# xac nhan qua dong REP, khong co actuation that lot vao - tinh nang do them 2026-09-10, file
+# nay tu 2026-08-20) qua j_replay.py + j_recalib_w240_v2.py.
+# CANH BAO: FFT dang TAT CHU DICH suot file nay (JANUS_FFT_KMIN=400 luc do) nen res[]=y[] THO,
+# CHUA khu chu ky. So voi bo cu (24.8372,6.6410,11.5795,7.0127,26.4767,21.2709, calibrate
+# 20260828 - nhieu kha nang cung duoi dieu kien FFT tat tuong tu, khong xac nhan duoc) thi bo
+# nay it nhat da dung dung W=240 (bo cu ngoai suy tu du lieu duoi W=120) va co normalize DTHR
+# theo replica (DTHR_BASE_REP, xem duoi) cho cpu/ram. Sau nay khi baseline du sach de bat lai
+# JANUS_FFT_KMIN=5 va tich luy du du lieu MOI (da khu chu ky that), NEN calibrate lai 1 lan nua
+# cho dung regime FFT-on - bo nay chi la buoc cai thien tam, chua phai ban cuoi cung.
 DTHR=array.array('d',DTHR_DEFAULT)
 _dts=os.environ.get('JANUS_DTHR','')
 if _dts:
     _dtp=_dts.split(',')
     for _i in range(min(MEWMA_DIM,len(_dtp))):DTHR[_i]=float(_dtp[_i])
 DTHR_ENV=1 if _dts else 0
+# 2026-09-13: normalize DTHR[cpu]/DTHR[ram] theo so replica LIVE thuc te, vi harness calibrate
+# 28/08 dung dung 5 replica/deployment (NDEP*5=30 pod tong). tcpu/tram (dv[0]/dv[1]) la TONG
+# TUYET DOI toan cluster (xem code tinh y[0]=tcpu, y[1]=rd o duoi), nen ty le TUYEN TINH voi
+# tong so pod dang chay - hop ly de scale nguong theo dung ty le. CHI ap dung cho cpu/ram (i=0,1):
+# rps (i=2) la traffic khach gui vao, KHONG phu thuoc topology, khong duoc chia; err/asym/slow
+# (i=3..5) da la ty le (khong phai tong), hieu ung suy giam phi tuyen theo tai/pod (queueing),
+# KHONG the chia don gian theo so replica - can calibrate lai da-regime rieng (backlog #2), chua
+# lam hom nay. DTHR_BASE_REP=so pod tong luc calibrate goc (NDEP*5=30 theo harness 28/08).
+DTHR_BASE_REP=int(os.environ.get('JANUS_DTHR_BASE_REP',str(NDEP*5)) or NDEP*5)
 FFT_N=672
 FFT_DT=900.0
 FFT_INTERVAL_SEC=900.0
@@ -266,7 +318,7 @@ def p99_from_buckets(bd):
     return low_le,1
 
 SF2=np.frombuffer(SIGMA_FLOOR2,dtype=np.float64)
-UCL_FIX=float(os.environ.get('JANUS_UCL','0') or 0) or 58.7343  # calibrate 20260828, W=240
+UCL_FIX=float(os.environ.get('JANUS_UCL','0') or 0) or 138.8896  # calibrate 20260913, W=240 (xem chu thich DTHR_DEFAULT o tren)
 UCL_CACHE={}
 def ucl_for(n,p):
     if p<1 or n<=p+1:return float('inf')
@@ -664,7 +716,17 @@ def dep_upd(j,v,s):
     k=s*NDEP+j
     if s!=2 and s!=3 and s!=5 and dep_po[k] and v==dep_pv[k]:return
     dep_pv[k]=v;dep_po[k]=1
-    if FRZ_DEP and frz[0]:
+    # 2026-09-15 FIX: bo s==2 (slot RPS) ra khoi dieu kien dong bang FRZ_DEP. Ly do: dep_mu[2*NDEP+j]
+    # duoc DUNG CHUNG cho 2 muc dich khac nhau - (a) z-score cho dim 'rps' trong key_run/anomaly
+    # detection, (b) capr=dep_mu[kk] dung tinh desired replica (capacity). Dong bang CA HAI la
+    # qua tay: dong bang (a) hop ly (tranh baseline 'tu lanh' gia tao giua luc dang bat thuong),
+    # nhung dong bang (b) lai phan tac dung - dung luc dang actuate/remediate la luc CAN capr hoc
+    # nhanh nhat de phan anh dung hieu qua vua lam, khong phai luc nen dong bang no. Neu model
+    # capacity dang tinh thieu replica (vd truoc khi fix capr 2026-09-14), viec dong bang con lam
+    # no KHONG CO CO HOI tu sua trong suot episode - dung nguyen nhan quan sat duoc. Rps la metric
+    # traffic khach hang gui vao that, khong phai metric noi tai de bi 'tu lanh gia tao' nhu
+    # cpu/ram/err/asym/slow, nen bo dong bang rieng cho no la an toan.
+    if FRZ_DEP and frz[0] and s!=2:
         n=dep_n[k]
         if n>=DEP_MIN:dep_z[k]=(v-dep_mu[k])/math.sqrt(dep_m2[k]/(n-1.0)+SIGMA_FLOOR2[s])
         return
@@ -1043,6 +1105,16 @@ async def flush_loop():
         prev_mono=mono
         rd=(tram-ram_prev)*(FLUSH_SEC/dw) if ram_init and dw>0.0 else 0.0
         ram_prev=tram;ram_init=True
+        # Tinh dec_rep[] (so replica LIVE moi dependency, dem tu pod_shards - du lieu Prometheus
+        # remote-write, KHONG can goi K8s API vi worker1 khong co kubeconfig) SOM o day (truoc
+        # ca vong dep_upd ben duoi) de dung ngay cho viec normalize rps ve per-pod TRUOC KHI nap
+        # vao running mean dep_mu (xem giai thich chi tiet o cho dep_upd(j,rj,2) ben duoi -
+        # day la fix bug capr tinh sai, 2026-09-14).
+        for _i in range(NDEP):dec_rep[_i]=0
+        for _sh in pod_shards:
+            for _pd in _sh.values():
+                _j=DEP_IDX.get(_pd.dep,-1)
+                if _j>=0:dec_rep[_j]+=1
         for j in range(NDEP):
             nm=DEP_LIST[j]
             c=dep_cpu.get(nm)
@@ -1054,7 +1126,18 @@ async def flush_loop():
                 no=dep_nout.get(nm,0.0)
                 if no>=MIN_BYTES:dep_upd(j,math.log(dep_nin.get(nm,0.0)/(no+EPS)+EPS_L),4)
             rj=d_rps[j]
-            if rj>0.0:dep_upd(j,rj,2)
+            # 2026-09-14 FIX: rj la RPS TONG toan deployment (Envoy/service level), KHONG phai
+            # per-pod. Truoc day nap thang rj vao dep_mu[2*NDEP+j] (running mean), roi luc quyet
+            # dinh moi chia cho cur HIEN TAI (capr=dep_mu[kk]/cur) - SAI vi dep_mu la trung binh
+            # CONG DON qua ca lich su (phan lon luc replica con la 5), con cur luc chia la SO
+            # REPLICA NGAY LUC QUYET DINH (co the da bi actuate xuong con 1). Hau qua: cang scale
+            # in nhieu, capr cang bi thoi phong ao (chia trung binh lich su cho so nho), he thong
+            # cang tin la con du suc chua, KHONG BAO GIO tu scale-out lai duoc (tu cung co sai
+            # theo chieu xau nhat). Fix: normalize ve per-pod (chia cho dec_rep[j] LUC NAP mau)
+            # TRUOC KHI dua vao running mean, de dep_mu[2*NDEP+j] la trung binh RPS/POD dung
+            # nghia, bat bien voi viec cur thay doi qua thoi gian do actuation.
+            _repj=dec_rep[j] if dec_rep[j]>0 else 1
+            if rj>0.0:dep_upd(j,rj/_repj,2)
             if rj>=MIN_REQ:dep_upd(j,logit(d_err[j]/rj),3)
             sv,st2=slow_from_buckets(bdd[j],SLOW_THR)
             if st2>=MIN_REQ:dep_upd(j,logit(sv),5)
@@ -1138,6 +1221,12 @@ async def flush_loop():
                 if av>UNI_K2:un2+=1
         nlk=mewma.decomp(t2) if warm else 0
         dv=mewma.d
+        # dec_rep[] da duoc tinh SOM hon nhieu (truoc vong dep_upd, dung cho fix capr per-pod) -
+        # o day chi tinh tiep _rep_total/_rep_scale/DTHR_EFF dua tren dec_rep da co san.
+        _rep_total=sum(dec_rep)
+        _rep_scale=(_rep_total/DTHR_BASE_REP) if DTHR_BASE_REP>0 else 1.0
+        DTHR_EFF=array.array('d',DTHR)
+        DTHR_EFF[0]*=_rep_scale;DTHR_EFF[1]*=_rep_scale  # chi cpu/ram - xem giai thich o khai bao DTHR_BASE_REP
         if nlk==MEWMA_DIM and not trig and mewma.tr<TR_MAX and DCALIB_TICKS>0 and len(calib_d[0])<CALIB_CAP:
             calib_seen[2]+=1
             if calib_seen[2]%DCALIB_STRIDE==0:
@@ -1154,18 +1243,18 @@ async def flush_loop():
                     calib_seen[2]=0
         rat=1
         for i in range(MEWMA_DIM):
-            if DTHR[i]<=0.0:rat=0;break
+            if DTHR_EFF[i]<=0.0:rat=0;break
         wi=-1;wd=0.0;ws=0.0
         if rat:
             for i in range(MEWMA_DIM):
-                if dv[i]>ws*DTHR[i]:ws=dv[i]/DTHR[i];wi=i;wd=dv[i]
+                if dv[i]>ws*DTHR_EFF[i]:ws=dv[i]/DTHR_EFF[i];wi=i;wd=dv[i]
         else:
             for i in range(MEWMA_DIM):
                 if dv[i]>wd:wd=dv[i];wi=i
-        sg=wi>=0 and (DTHR[wi]<=0.0 or wd>DTHR[wi])
+        sg=wi>=0 and (DTHR_EFF[wi]<=0.0 or wd>DTHR_EFF[wi])
         ah=0;bh=0
         for i in range(MEWMA_DIM):
-            if DTHR[i]>0.0 and dv[i]>DTHR[i]:
+            if DTHR_EFF[i]>0.0 and dv[i]>DTHR_EFF[i]:
                 if i<3:ah=1
                 else:bh=1
         tax=ah|(bh<<1)
@@ -1176,6 +1265,8 @@ async def flush_loop():
                 if az<0.0:az=-az
                 if az>wz:wz=az;wdepa=j
         wdep=wdepa if sg else -1
+        if DEC_DEBUG:
+            print(f'  DECDBG tick={epoch} wi={DIMS[wi] if wi>=0 else "-"} wdepa={DEP_LIST[wdepa] if wdepa>=0 else "-"} sg={int(sg)} trig={int(trig)} key_run={list(key_run)} key_miss={list(key_miss)} cool_active={sum(1 for c in key_cool if c>0)}')
         fftk=0
         for _h in hset.active:
             if _h.k:fftk+=1
@@ -1190,13 +1281,8 @@ async def flush_loop():
         print(f'  UNI trig={int(un1>0)} n_k{UNI_K:.0f}={un1} n_k{UNI_K2:.0f}={un2} max={DIMS[uw] if uw>=0 else "-"} z={um:.3f} mewma={int(trig)} t2={t2:.3f}')
         print('  D '+' '.join(f'{DIMS[i]}={dv[i]:.3f}' for i in range(MEWMA_DIM))+f' nl={nlk} fftk={fftk} tax={tax}')
         if trig:
-            print(f'  ATTR dim={DIMS[wi] if wi>=0 else "-"} d={wd:.3f} thr={DTHR[wi] if wi>=0 else 0.0:.3f} sig={int(sg)} rule={"rat" if rat else "raw"} dep={DEP_LIST[wdep] if wdep>=0 else "UNATTRIBUTED"} z={wz:+.3f}')
-        for _i in range(NDEP):dec_rep[_i]=0
-        for _sh in pod_shards:
-            for _pd in _sh.values():
-                _j=DEP_IDX.get(_pd.dep,-1)
-                if _j>=0:dec_rep[_j]+=1
-        print('  REP '+' '.join(f'{DEP_LIST[_j]}={dec_rep[_j]}' for _j in range(NDEP))+' MU '+' '.join(f'{dep_mu[2*NDEP+_j]:.3f}' for _j in range(NDEP)))
+            print(f'  ATTR dim={DIMS[wi] if wi>=0 else "-"} d={wd:.3f} thr={DTHR_EFF[wi] if wi>=0 else 0.0:.3f} sig={int(sg)} rule={"rat" if rat else "raw"} dep={DEP_LIST[wdep] if wdep>=0 else "UNATTRIBUTED"} z={wz:+.3f}')
+        print('  REP '+' '.join(f'{DEP_LIST[_j]}={dec_rep[_j]}' for _j in range(NDEP))+f' rep_total={_rep_total} rep_scale={_rep_scale:.3f} MU '+' '.join(f'{dep_mu[2*NDEP+_j]:.3f}' for _j in range(NDEP)))
         if CANDS:
             ur=ucl_rat(mewma.count,mewma.p)
             for c in CANDS:
@@ -1252,7 +1338,7 @@ async def flush_loop():
                     elif c2<1 or q2<DEP_MIN or d_rps[cdep]<MIN_REQ:
                         a2='nodata';d2=c2;m2=0;r2=0.0
                     else:
-                        r2=dep_mu[k2]/c2
+                        r2=dep_mu[k2]  # 2026-09-14 FIX: dep_mu da la RPS/POD, khong con chia /c2 nua (xem dep_upd)
                         d2=int(math.ceil(d_rps[cdep]/r2)) if r2>0.0 else c2
                         m2=MAX_REP.get(n2,10)
                         if n2 in PG_POOL:
@@ -1281,38 +1367,113 @@ async def flush_loop():
             if epoch%EVAL_SUM==0:
                 for c in CANDS:
                     print(f'  EVALSUM c={c.id} ucl={c.ucl:.4f} latch={c.latch} trig={c.n_trig} attr={c.n_attr} dec={c.n_dec} act={c.n_act} epoch={epoch}')
-        if dec_cool>0:dec_cool-=1
-        dkey=wi*NDEP+wdep if (trig and sg and wdep>=0) else -1
-        if dkey>=0 and dkey==dec_key:
-            dec_run+=1;dec_st|=tax
-        else:
-            dec_key=dkey;dec_run=1 if dkey>=0 else 0;dec_st=tax if dkey>=0 else 0
-        if dec_run>=DEC_LATCH and dec_cool==0:
-            nm=DEP_LIST[wdep];cur=dec_rep[wdep];kk=2*NDEP+wdep;nn=dep_n[kk]
-            if wi not in SCALE_DIM:
+        # Cap nhat 6 bo dem lien tiep RIENG TUNG DEPENDENCY. Moi dependency tu kiem tra CA 6
+        # metric doc lap (KHONG con dung chung wi/sg toan cuc). Dependency nao vuot UNI_K
+        # o BAT KY metric nao thi +1 cho chinh no va nho lai metric nao gay latch (key_run_dim,
+        # dung khi actuate ben duoi thay cho wi chung), dong thoi xoa key_miss (het chuoi mien).
+        # Khong vuot o metric nao ca (miss) THI CHUA reset ngay - cho phep toi da JANUS_MISS_TOL
+        # tick LIEN TIEP khong trig ma van dong bang key_run/key_run_dim (grace-miss, tranh mat
+        # sach streak chi vi 1 tick dip thoang qua, vd luc pod restart sau actuate that). Chi
+        # RESET VE 0 khi so tick khong trig LIEN TIEP vuot qua JANUS_MISS_TOL. Van khong dung
+        # 'trig'/'sg' toan cuc lam dieu kien reset (truoc day 1 tick sg=False xoa oan toan bo 6
+        # bo dem, ke ca dependency dang bat thuong that o rieng no).
+        # QUAN TRONG: dep_z la z-score RIENG TUNG DEPENDENCY (thang do nho, ~vai don vi), khac
+        # han DTHR (calibrate cho dv[] - thong ke TONG HOP toan he thong, thang do lon hon nhieu,
+        # vd dv~460 trong log that). Dung UNI_K (nguong z-score co san, dang dung cho detector
+        # don bien UNI) cho dung don vi, KHONG dung DTHR o day.
+        for j in range(NDEP):
+            best_dim=-1;best_z=0.0
+            for i in range(MEWMA_DIM):
+                az=dep_z[i*NDEP+j]
+                if az<0.0:az=-az
+                if az>best_z:best_z=az;best_dim=i
+            if best_z>UNI_K:
+                key_run[j]+=1
+                key_run_dim[j]=best_dim
+                key_miss[j]=0
+            else:
+                key_miss[j]+=1
+                if key_miss[j]>JANUS_MISS_TOL:
+                    key_run[j]=0
+                    key_run_dim[j]=-1
+                    key_miss[j]=0
+                # else: trong khoang mien (grace) - dong bang key_run/key_run_dim, khong doi
+        dec_key=wi if sg else -1;dec_run=max(key_run) if NDEP else 0;dec_st=tax if (trig and sg) else 0
+
+        for wdep2 in range(NDEP):
+            if key_cool[wdep2]>0:key_cool[wdep2]-=1;continue
+            if key_run[wdep2]<DEC_LATCH:continue
+            wi2=key_run_dim[wdep2]
+            if wi2<0:continue
+            nm=DEP_LIST[wdep2];cur=dec_rep[wdep2];kk=2*NDEP+wdep2;nn=dep_n[kk]
+
+            # Nghi van nghen tang DB dung chung: >=2 thanh vien CUNG NHOM dang vuot DTHR
+            # o dung dimension wi2, ngay tai epoch nay - khong actuate vi scale 1 pod app-tier
+            # nhieu kha nang vo ich khi that su la DB (single-writer) bi nghen.
+            grp=None
+            if wdep2 in GROUP_LEDGER:grp=GROUP_LEDGER
+            elif wdep2 in GROUP_ACCOUNTS:grp=GROUP_ACCOUNTS
+            db_suspect=False
+            if grp is not None:
+                nover=0
+                for j in grp:
+                    az=dep_z[wi2*NDEP+j]
+                    if az<0.0:az=-az
+                    if az>UNI_K:nover+=1
+                db_suspect=nover>=2
+
+            if db_suspect:
+                print(f'  DECIDE dep={nm} dim={DIMS[wi2]} run={key_run[wdep2]} act=alert_db_group tax={dec_st} '
+                      f'ly_do="nghi ngen tang DB dung chung, khong actuate" DRYRUN')
+                continue
+
+            if wi2 not in SCALE_DIM:
                 act='alert';des=cur;mx=0;capr=0.0
-            elif cur<1 or nn<DEP_MIN or d_rps[wdep]<MIN_REQ:
+            elif cur<1 or nn<DEP_MIN or d_rps[wdep2]<MIN_REQ:
                 act='nodata';des=cur;mx=0;capr=0.0
             else:
-                capr=dep_mu[kk]/cur
-                des=int(math.ceil(d_rps[wdep]/capr)) if capr>0.0 else cur
+                # 2026-09-14 FIX: dep_mu[kk] gio da la RPS/POD (da normalize luc nap mau, xem
+                # dep_upd(j,rj/_repj,2) o tren) - KHONG con chia /cur o day nua. Truoc day
+                # capr=dep_mu[kk]/cur SAI vi dep_mu la trung binh RPS TONG ca lich su (luc do cur
+                # co the khac han cur bay gio do actuation) - xem chu thich chi tiet o dep_upd.
+                capr=dep_mu[kk]
+                des=int(math.ceil(d_rps[wdep2]/capr)) if capr>0.0 else cur
                 mx=MAX_REP.get(nm,10)
                 if nm in PG_POOL:
                     used=0
-                    for nm2 in PG_POOL:
-                        j2=DEP_IDX[nm2]
-                        if j2!=wdep:used+=dec_rep[j2]*PG_POOL[nm2]
-                    m2=(PG_BUDGET-used)//PG_POOL[nm]
-                    if m2<mx:mx=m2
+                    for nm3 in PG_POOL:
+                        j3=DEP_IDX[nm3]
+                        if j3!=wdep2:used+=dec_rep[j3]*PG_POOL[nm3]
+                    m3=(PG_BUDGET-used)//PG_POOL[nm]
+                    if m3<mx:mx=m3
                 want=des
                 if des>mx:des=mx
                 if des<1:des=1
                 if want>mx:act='capped'
-                elif des<cur and wi!=2:des=cur;act='hold_dim'
+                elif des<cur and wi2!=2:des=cur;act='hold_dim'
                 elif des!=cur and abs(des-cur)/cur>=DEC_BAND:act='scale_out' if des>cur else 'scale_in'
                 else:act='hold'
-            if dec_st==2:act='alert_sdf';des=cur
-            elif dec_st==3:act='alert_ddos';des=cur
+                # 2026-09-15 FIX (debug rieng, theo yeu cau): mo hinh capacity o tren CHI dua vao
+                # rps/capr (xem chu thich FIX 2026-09-14) - MU HOAN TOAN truoc viec dim gay latch
+                # (wi2) la gi. Neu latch dang do nhom SUY GIAM (err=3/asym=4/slow=5, KHONG phai
+                # do luu luong cao) ma cong thuc rps lai ket luan 'hold'/'hold_dim' (khong can
+                # them pod), thi dung im la SAI - vi rps khong giai thich duoc nguyen nhan that.
+                # Them 1 pod 'do' (diagnostic, +1 moi lan, van bi DEC_COOL/max chan binh thuong)
+                # de xem co giam suy giam khong, thay vi khoanh tay cho toi khi tu het (hoac
+                # khong bao gio het) bang duong rps thuan tuy.
+                if act in ('hold','hold_dim') and wi2 in (3,4,5) and cur<mx:
+                    des=cur+1;act='scale_out'
+                    print(f'  DECIDE_DIAG dep={nm} dim={DIMS[wi2]} ly_do="rps-model noi hold nhung '
+                          f'dim la suy giam (err/asym/slow), them 1 pod do" cur={cur} -> des={des}')
+            # 2026-09-13: BO override alert_sdf/alert_ddos ep des=cur. Ly do: dang uu tien
+            # autoscale dung dan, chua can quan tam phat hien DDoS (assume moi DDoS deu la
+            # black swan - khong dang de danh doi lay viec chan scale that khi can). dec_st/tax
+            # VAN duoc tinh va in log (dong D, ATTR, DECIDE tax=...) de giu quan sat/debug, chi
+            # KHONG con anh huong toi act/des nua. Muon bat lai override nay (vd sau khi
+            # taxonomy DDoS duoc validate that su), them lai 2 dong:
+            #   if dec_st==2:act='alert_sdf';des=cur
+            #   elif dec_st==3:act='alert_ddos';des=cur
+            # ngay duoi day.
             # Chi thuc su goi webhook khi co delta that (des!=cur). 'capped' van co the la
             # scale that (chi bi gioi han bien do), nhung neu mx khong doi va da o mx roi
             # thi des==cur -> khong goi mang, khong ton cooldown oan (khac hanh vi cu).
@@ -1320,9 +1481,9 @@ async def flush_loop():
             will_act=act in ('scale_out','scale_in','capped') and des!=cur and not in_warmup
             acted=False
             if will_act:
-                acted,m_from,m_to=await actuate(wdep,nm,NS_FILTER,cur,des)
+                acted,m_from,m_to=await actuate(wdep2,nm,NS_FILTER,cur,des)
             if acted:
-                dec_cool=DEC_COOL
+                key_cool[wdep2]=DEC_COOL
                 if FRZ_ACT and act in ('scale_out','scale_in'):dec_act[0]=1
                 tag='ACTUATED'
             elif in_warmup and act in ('scale_out','scale_in','capped') and des!=cur:
@@ -1331,12 +1492,12 @@ async def flush_loop():
                 tag='ACT_FAILED (khong cooldown, se thu lai epoch sau)'
             else:
                 tag='DRYRUN' if ACT_ENABLED else 'DRYRUN(act_url_trong)'
-            print(f'  DECIDE dep={nm} dim={DIMS[wi]} cur={cur} desired={des} max={mx} capr={capr:.2f} rps={d_rps[wdep]:.1f} run={dec_run} act={act} tax={dec_st} dcc={router.out} {tag}')
+            print(f'  DECIDE dep={nm} dim={DIMS[wi2]} cur={cur} desired={des} max={mx} capr={capr:.2f} rps={d_rps[wdep2]:.1f} run={key_run[wdep2]} act={act} tax={dec_st} dcc={router.out} {tag}')
             if DEC_CSV:
                 if dec_fh is None:
                     dec_fh=open(DEC_CSV,'a',buffering=1)
                     dec_fh.write('ts,cand,dep,dim,d,thr,cur,desired,max,capr,rps,run,act,tax,dcc\n')
-                dec_fh.write(f'{int(time.time())},A,{nm},{DIMS[wi]},{wd:.3f},{DTHR[wi]:.3f},{cur},{des},{mx},{capr:.2f},{d_rps[wdep]:.1f},{dec_run},{act},{dec_st},{router.out}\n')
+                dec_fh.write(f'{int(time.time())},A,{nm},{DIMS[wi2]},{dv[wi2]:.3f},{DTHR_EFF[wi2]:.3f},{cur},{des},{mx},{capr:.2f},{d_rps[wdep2]:.1f},{key_run[wdep2]},{act},{dec_st},{router.out}\n')
         if FRZ_ON:
             if frz[0]:
                 frz[2]+=1
@@ -1364,6 +1525,7 @@ async def flush_loop():
 async def lifespan(app):
     global http_client
     http_client=httpx.AsyncClient()
+    print(f'  CONFIG dec_latch={DEC_LATCH} miss_tol={JANUS_MISS_TOL} dec_cool={DEC_COOL} dec_band={DEC_BAND} uni_k={UNI_K} uni_k2={UNI_K2} act_warmup={ACT_WARMUP_TICKS} dthr_base_rep={DTHR_BASE_REP} tax_override=OFF(blackswan)')
     if ACT_ENABLED:
         print(f'  ACT enabled url={ACT_URL} timeout={ACT_TIMEOUT}s fail_max={ACT_FAIL_MAX}')
     else:

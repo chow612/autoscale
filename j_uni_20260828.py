@@ -1,0 +1,99 @@
+import array,hashlib,math
+
+P='/home/chau/quant-engine/ing_20260820T023433Z.log'
+T0=1787193273
+DW=3.002
+C0=1787629023
+C1=1787888223
+B0=2820.0
+BP=3636.00
+HW=300.0
+NB=3
+FAR=1.00
+
+def q(a,p):
+    b=sorted(a)
+    if not b:return float('nan')
+    return b[int(round(p*0.01*(len(b)-1)))]
+
+def main():
+    src=open(__file__,'rb').read()
+    print('SCRIPT j_uni_20260828.py md5=%s dong=%d'%(hashlib.md5(src).hexdigest(),src.count(b'\n')))
+    um=array.array('d');t2=array.array('d');ur=bytearray();mw=bytearray()
+    with open(P,'r',errors='replace') as fh:
+        for ln in fh:
+            if not ln.startswith('  UNI '):continue
+            u=0.0;v=0.0;r=0;m=0
+            for tk in ln.split():
+                if tk.startswith('z='):u=float(tk[2:])
+                elif tk.startswith('t2='):v=float(tk[3:])
+                elif tk.startswith('trig='):r=int(tk[5:])
+                elif tk.startswith('mewma='):m=int(tk[6:])
+            um.append(u);t2.append(v);ur.append(r);mw.append(m)
+    n=len(um)
+    a=int(round((C0-T0)/DW));b=int(round((C1-T0)/DW))
+    print('dong UNI=%d  cua so sach [%d..%d)'%(n,a,b))
+    if n<b:
+        print('CHUA DU: thieu %d tick = %.1f phut. DUNG.'%(b-n,(b-n)*DW/60.0));return
+    ex=bytearray(b'\x01'*(b-a))
+    mk=[]
+    k=int((T0+a*DW-B0)/BP)
+    while 1:
+        c=B0+k*BP
+        k+=1
+        if c-HW>T0+b*DW:break
+        i0=int(round((c-HW-T0)/DW));i1=int(round((c+HW-T0)/DW))
+        if i1<a or i0>=b:continue
+        if i0<a:i0=a
+        if i1>=b:i1=b-1
+        mk.append((i0,i1))
+        for t in range(i0,i1+1):ex[t-a]=0
+    nex=sum(1 for v in ex if not v)
+    print('su kien 3622s trong cua so: %d  tick loai khoi hieu chuan: %d (%.2f%%)'%(
+        len(mk),nex,100.0*nex/(b-a)))
+    cal=[t for t in range(a,b) if ex[t-a]]
+    K=q([um[t] for t in cal],100.0-FAR)
+    U=q([t2[t] for t in cal],100.0-FAR)
+    fu=100.0*sum(1 for t in cal if um[t]>K)/len(cal)
+    ft=100.0*sum(1 for t in cal if t2[t]>U)/len(cal)
+    print('')
+    print('hieu chuan tren %d tick sach: UNI K*=%.4f (FAR=%.4f%%)  T2 U*=%.4f (FAR=%.4f%%)'%(
+        len(cal),K,fu,U,ft))
+    nraw=sum(1 for t in range(a,b) if ur[t])
+    print('doi chung D8: nhanh UNI NGUYEN BAN (UNI_K=3.0) chay %d/%d tick = %.6f%%'%(
+        nraw,b-a,100.0*nraw/(b-a)))
+    print('')
+    print('on dinh theo khoi ngay:')
+    for j in range(NB):
+        s=a+j*(b-a)//NB;e=a+(j+1)*(b-a)//NB
+        c2=[t for t in range(s,e) if ex[t-a]]
+        p1=100.0*sum(1 for t in c2 if um[t]>K)/len(c2)
+        p2=100.0*sum(1 for t in c2 if t2[t]>U)/len(c2)
+        print('  khoi %d n=%-6d UNI=%.4f%%  T2=%.4f%%'%(j+1,len(c2),p1,p2))
+    print('')
+    bu=0;bt=0;bb=0;bn=0;dif=[]
+    for i0,i1 in mk:
+        du=-1;dt=-1
+        for t in range(i0,i1+1):
+            if du<0 and um[t]>K:du=t
+            if dt<0 and t2[t]>U:dt=t
+            if du>=0 and dt>=0:break
+        if du>=0 and dt>=0:
+            bb+=1;dif.append(dt-du)
+        elif du>=0:bu+=1
+        elif dt>=0:bt+=1
+        else:bn+=1
+    print('tren %d su kien 3622s (ngoai mau hieu chuan):'%len(mk))
+    print('  ca hai bat=%d   chi UNI=%d   chi T2=%d   khong ben nao=%d'%(bb,bu,bt,bn))
+    print('  do bao phu: UNI=%.1f%%  T2=%.1f%%'%(
+        100.0*(bb+bu)/len(mk),100.0*(bb+bt)/len(mk)))
+    if dif:
+        md=q(dif,50)
+        print('  trung vi (tick_T2 - tick_UNI) tren %d su kien ca hai bat = %+.1f tick = %+.1f s'%(
+            len(dif),md,md*DW))
+        print('  KET LUAN som hon: %s'%('T2' if md<0 else ('UNI' if md>0 else 'HOA')))
+    else:
+        print('  khong su kien nao ca hai cung bat -> khong so duoc do som')
+
+if __name__=='__main__':
+    main()

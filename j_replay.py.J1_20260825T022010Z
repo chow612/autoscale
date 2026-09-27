@@ -1,5 +1,4 @@
-import sys,os,array,importlib.util,hashlib
-import numpy as np
+import sys,os,array,importlib.util
 
 DIMS=('cpu','ram','rps','err','asym','slow')
 DEPS=('balancereader','contacts','frontend','ledgerwriter','transactionhistory','userservice')
@@ -43,7 +42,7 @@ def _v(t):
 
 
 class Log:
-    __slots__=('n','mask','seen','res','dd','sd','mu','xx','zz','dz','live','trig','frz','t2','ucl',
+    __slots__=('n','res','dd','sd','mu','xx','zz','dz','live','trig','frz','t2','ucl',
                'tr','dw','cnt','pp','nl','calm','tuoi')
 
     def __init__(s):
@@ -53,71 +52,11 @@ class Log:
             setattr(s,a,bytearray())
         for a in ('cnt','pp','nl','calm','tuoi'):
             setattr(s,a,array.array('i'))
-        s.n=0;s.mask=0;s.seen=0
+        s.n=0
 
 
-MASK_FULL=127
-MASK_LOOSE=7
-BITNM=('window','MEWMA','FFT','Z','SD','D','FRZstate')
-
-_LOG_ARR_D=('res','dd','sd','mu','xx','zz','dz','t2','ucl','tr','dw')
-_LOG_ARR_B=('live','trig','frz')
-_LOG_ARR_I=('cnt','pp','nl','calm','tuoi')
-
-
-def _cache_path(path,limit,loose):
-    st=os.stat(path)
-    key='%d_%d_%d_%d'%(st.st_size,int(st.st_mtime),limit,loose)
-    h=hashlib.md5(key.encode()).hexdigest()[:12]
-    return path+'.jrc_%s.npz'%h
-
-
-def _save_cache(cp,L):
-    kw={}
-    for a in _LOG_ARR_D+_LOG_ARR_I:
-        kw[a]=np.frombuffer(getattr(L,a),dtype=(np.float64 if a in _LOG_ARR_D else np.int32))
-    for a in _LOG_ARR_B:
-        kw[a]=np.frombuffer(getattr(L,a),dtype=np.uint8)
-    kw['n']=np.array([L.n]);kw['mask']=np.array([L.mask]);kw['seen']=np.array([L.seen])
-    tmp=cp+'.tmp.npz'
-    np.savez(tmp,**kw)
-    os.replace(tmp,cp)
-
-
-def _load_cache(cp):
-    z=np.load(cp)
+def parse(path,limit=0):
     L=Log()
-    for a in _LOG_ARR_D:
-        setattr(L,a,array.array('d',z[a].tobytes()))
-    for a in _LOG_ARR_I:
-        setattr(L,a,array.array('i',z[a].astype(np.int32).tobytes()))
-    for a in _LOG_ARR_B:
-        setattr(L,a,bytearray(z[a].tobytes()))
-    L.n=int(z['n'][0]);L.mask=int(z['mask'][0]);L.seen=int(z['seen'][0])
-    return L
-
-
-def parse(path,limit=0,loose=0,use_cache=True):
-    if use_cache:
-        cp=_cache_path(path,limit,loose)
-        if os.path.exists(cp):
-            try:
-                return _load_cache(cp)
-            except Exception:
-                pass
-        L=_parse_raw(path,limit,loose)
-        try:
-            _save_cache(cp,L)
-        except Exception:
-            pass
-        return L
-    return _parse_raw(path,limit,loose)
-
-
-def _parse_raw(path,limit=0,loose=0):
-    L=Log()
-    need=MASK_LOOSE if loose else MASK_FULL
-    L.mask=need;L.seen=0
     r=array.array('d',[0.0]*D6);dv=array.array('d',[0.0]*D6)
     sv=array.array('d',[0.0]*D6);mv=array.array('d',[0.0]*D6)
     xv=array.array('d',[0.0]*D6);zv=array.array('d',[0.0]*D6)
@@ -138,10 +77,9 @@ def _parse_raw(path,limit=0,loose=0):
     f=open(path,'r',errors='replace')
     for ln in f:
         if ln[:3]=='---':
-            if (st['have']&need)==need:
+            if st['have']==127:
                 flush()
                 if limit and L.n>=limit:break
-            L.seen|=st['have']
             st['have']=0
             if ln[:10]=='--- window':
                 for t in ln.split():
@@ -189,12 +127,8 @@ def _parse_raw(path,limit=0,loose=0):
                 j=DIDX[h];p=_v(t).split('/')
                 for i in range(D6):dz[i*ND+j]=float(p[i])
     else:
-        if (st['have']&need)==need:flush()
-    L.seen|=st['have']
+        if st['have']==127:flush()
     f.close()
-    if L.n==0:
-        mi=[BITNM[i] for i in range(7) if (need>>i&1) and not (L.seen>>i&1)]
-        raise RuntimeError('j_replay.parse: 0 tick tu %s ; can_mask=%d thay_mask=%d ; thieu loai dong: %s'%(path,need,L.seen,','.join(mi) if mi else '(du loai dong nhung khong tick nao du bo)'))
     return L
 
 

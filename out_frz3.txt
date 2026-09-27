@@ -1,0 +1,17 @@
+khong bang: p99=98.3097  ti_le_trig=0.9997%
+
+=== dinh vi bien bat on dinh (chay tai UCL cua ban khong bang) ===
+FRZ_REL  p99_moi    ti_le/p99_cu %tick_bang  REB/ngay  dot_max 
+12       170.70     1.74       3.03        0.00      145     
+14       171.75     1.75       3.28        0.00      147     
+16       172.89     1.76       3.53        0.00      149     
+18       174.09     1.77       3.76        0.00      154     
+20       175.44     1.78       3.99        0.00      157     
+22       176.46     1.79       4.22        0.00      187     
+24       177.00     1.80       4.45        0.00      189     
+28       177.85     1.81       4.87        0.00      193     
+32       177.99     1.81       5.31        0.00      298     
+
+=== chot UCL bang chia doi tren ti le trig = 1%% ===
+FRZ_REL=8   UCL=124.6776  ti_le_trig=0.9986%  %bang=1.55  REB/ngay=0.00  p99_n1=82.26 p99_n2=180.78 lech=119.8%  d_min=3.722
+FRZ_REL=12  UCL=126.1465  ti_le_trig=1.0015%  %bang=1.84  REB/ngay=0.00  p99_n1=83.76 p99_n2=180.18 lech=115.1%  d_min=3.744

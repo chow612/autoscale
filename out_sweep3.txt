@@ -1,0 +1,79 @@
+dep_lines_per_tick {6: 555083}
+VALIDATE trig=25676 mm_dim=7593 mm_dep=25574  mm_dep_on_tie=15 mm_dep_no_tie=25559
+
+SU KIEN/NGAY  [1 su kien / run]
+ucl       q        trig%   L2     L3     L4     L6     L8     L12    L16    L24   
+18.5652   F-dist   0.318   1402.12 800.57 484.23 188.91 86.65  26.51  7.52   0.83  
+            slow/fe         241.00 170.28 120.99 63.87  35.38  11.41  3.94   0.36  
+32.9130   0.9      0.100   569.22 325.37 201.83 86.34  45.45  16.86  4.72   0.47  
+            slow/fe         106.93 70.98  49.96  25.79  13.75  4.77   1.56   0.05  
+47.3796   0.95     0.050   266.11 157.21 103.72 52.20  31.18  13.75  3.84   0.42  
+            slow/fe         47.63  32.58  22.83  11.36  6.28   2.49   0.73   0.00  
+96.4466   0.975    0.025   123.80 78.71  56.19  32.53  21.12  9.75   2.28   0.10  
+            slow/fe         14.32  9.13   5.97   3.22   1.25   0.36   0.05   0.00  
+264.9409  0.99     0.010   47.11  32.74  25.01  16.03  11.26  4.25   0.78   0.00  
+            slow/fe         0.99   0.42   0.21   0.10   0.00   0.00   0.00   0.00  
+418.7460  0.995    0.005   24.70  17.28  12.82  8.20   5.60   1.76   0.10   0.00  
+            slow/fe         0.05   0.00   0.00   0.00   0.00   0.00   0.00   0.00  
+878.0112  0.999    0.001   5.24   3.74   2.85   1.40   0.99   0.16   0.00   0.00  
+            slow/fe         0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00  
+
+SU KIEN/NGAY  [COOL=100]
+ucl       q        trig%   L2     L3     L4     L6     L8     L12    L16    L24   
+18.5652   F-dist   0.318   881.30 554.07 363.29 157.16 77.20  24.80  7.26   0.78  
+            slow/fe         122.60 99.62  78.97  49.08  30.30  10.48  3.84   0.36  
+32.9130   0.9      0.100   407.55 250.96 162.66 74.30  40.63  15.77  4.57   0.42  
+            slow/fe         64.44  49.08  37.20  21.32  11.83  4.25   1.56   0.05  
+47.3796   0.95     0.050   188.86 116.79 80.94  44.21  27.60  12.97  3.68   0.36  
+            slow/fe         29.47  22.05  16.65  9.13   5.34   2.33   0.73   0.00  
+96.4466   0.975    0.025   82.60  56.71  43.06  27.71  18.94  9.39   2.23   0.05  
+            slow/fe         9.08   6.43   4.25   2.80   1.14   0.36   0.05   0.00  
+264.9409  0.99     0.010   32.84  24.64  19.98  13.65  10.48  4.15   0.73   0.00  
+            slow/fe         0.78   0.31   0.16   0.05   0.00   0.00   0.00   0.00  
+418.7460  0.995    0.005   17.17  13.33  10.95  7.52   5.40   1.71   0.10   0.00  
+            slow/fe         0.05   0.00   0.00   0.00   0.00   0.00   0.00   0.00  
+878.0112  0.999    0.001   3.79   2.75   2.23   1.19   0.93   0.16   0.00   0.00  
+            slow/fe         0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00  
+
+TOP CAP tai (ucl,latch) chon
+F-dist   ucl=18.57    L4   cpu/userservice:1632 slow/frontend:1522 asym/frontend:1287 asym/transactionhistory:1081 asym/balancereader:310
+F-dist   ucl=18.57    L8   slow/frontend:584 asym/transactionhistory:386 cpu/userservice:285 asym/frontend:170 asym/balancereader:28
+0.9      ucl=32.91    L4   slow/frontend:717 asym/transactionhistory:683 cpu/userservice:655 asym/frontend:612 cpu/frontend:69
+0.9      ucl=32.91    L8   asym/transactionhistory:340 slow/frontend:228 cpu/userservice:112 asym/frontend:80 cpu/transactionhistory:5
+0.95     ucl=47.38    L4   asym/transactionhistory:518 slow/frontend:321 asym/frontend:254 cpu/userservice:232 cpu/frontend:53
+0.95     ucl=47.38    L8   asym/transactionhistory:323 slow/frontend:103 cpu/userservice:52 asym/frontend:36 cpu/transactionhistory:5
+0.975    ucl=96.45    L4   asym/transactionhistory:428 asym/frontend:139 slow/frontend:82 cpu/userservice:50 cpu/transactionhistory:30
+0.975    ucl=96.45    L8   asym/transactionhistory:296 asym/frontend:24 slow/frontend:22 cpu/userservice:10 cpu/transactionhistory:5
+0.99     ucl=264.94   L4   asym/transactionhistory:274 asym/frontend:55 cpu/frontend:11 cpu/contacts:9 cpu/transactionhistory:9
+0.99     ucl=264.94   L8   asym/transactionhistory:187 asym/frontend:6 cpu/userservice:3 cpu/frontend:2 cpu/ledgerwriter:2
+0.995    ucl=418.75   L4   asym/transactionhistory:165 asym/frontend:19 cpu/frontend:6 cpu/contacts:5 cpu/transactionhistory:5
+0.995    ucl=418.75   L8   asym/transactionhistory:94 cpu/frontend:2 cpu/userservice:2 cpu/ledgerwriter:2 asym/frontend:2
+0.999    ucl=878.01   L4   asym/transactionhistory:31 cpu/frontend:3 cpu/userservice:3 cpu/ledgerwriter:2 cpu/transactionhistory:1
+0.999    ucl=878.01   L8   asym/transactionhistory:14 cpu/frontend:1 cpu/userservice:1 cpu/ledgerwriter:1 asym/frontend:1
+
+DTHR HIEU CHUAN LAI THEO TUNG UCL
+F-dist   ucl=18.57    n=378146  cpu=12.3325 ram=6.1290 rps=5.9210 err=5.9220 asym=13.1870 slow=10.7550
+         DTHR moi      L4=355.82(fe 75.18)  L6=147.82(fe 44.98)  L8=68.23(fe 26.46)  L12=19.15(fe 8.82)
+0.9      ucl=32.91    n=499428  cpu=20.0620 ram=6.7190 rps=7.1127 err=6.7220 asym=21.5990 slow=16.6330
+         DTHR moi      L4=131.53(fe 27.65)  L6=54.27(fe 14.22)  L8=27.97(fe 7.68)  L12=8.56(fe 2.59)
+0.95     ucl=47.38    n=527174  cpu=24.3553 ram=6.8463 rps=8.2970 err=6.9333 asym=26.4893 slow=20.3135
+         DTHR moi      L4=67.14(fe 11.21)  L6=32.12(fe 5.60)  L8=18.00(fe 2.96)  L12=6.23(fe 1.25)
+0.975    ucl=96.45    n=541047  cpu=29.9022 ram=7.2700 rps=11.6060 err=7.2195 asym=30.4072 slow=25.6141
+         DTHR moi      L4=36.32(fe 2.59)  L6=20.60(fe 1.09)  L8=12.30(fe 0.47)  L12=5.08(fe 0.16)
+0.99     ucl=264.94   n=549370  cpu=38.3266 ram=8.6040 rps=19.0359 err=7.8170 asym=42.5675 slow=32.5642
+         DTHR moi      L4=17.54(fe 0.16)  L6=11.26(fe 0.05)  L8=7.94(fe 0.00)  L12=2.70(fe 0.00)
+0.995    ucl=418.75   n=552145  cpu=43.8680 ram=9.7100 rps=23.9986 err=8.2480 asym=61.1517 slow=35.5156
+         DTHR moi      L4=9.81(fe 0.10)  L6=6.23(fe 0.00)  L8=4.05(fe 0.00)  L12=1.19(fe 0.00)
+0.999    ucl=878.01   n=554365  cpu=50.8494 ram=11.1400 rps=29.3397 err=8.8557 asym=90.2208 slow=38.7602
+         DTHR moi      L4=2.13(fe 0.00)  L6=1.19(fe 0.00)  L8=0.83(fe 0.00)  L12=0.10(fe 0.00)
+
+TACH MAU: hieu chuan nua dau, danh gia nua sau
+q=0.95   ucl_nua1=44.1077 ucl_nua2=52.1044 lech=18.1%  DTHR1=23.6880,6.8237,7.9390,6.8940,25.9677,19.7455
+   in-sample   L4=61.02(fe 10.48) n=588  L6=22.93(fe 4.25) n=221  L8=11.00(fe 2.39) n=106
+   out-sample  L4=86.54(fe 15.57) n=834  L6=44.72(fe 9.24) n=431  L8=26.98(fe 4.77) n=260
+q=0.99   ucl_nua1=192.9642 ucl_nua2=332.1535 lech=72.1%  DTHR1=37.8080,7.8038,13.7101,7.5110,34.5110,28.9678
+   in-sample   L4=13.70(fe 0.21) n=132  L6=6.43(fe 0.10) n=62  L8=3.32(fe 0.00) n=32
+   out-sample  L4=34.14(fe 0.93) n=329  L6=22.00(fe 0.52) n=212  L8=16.50(fe 0.10) n=159
+q=0.995  ucl_nua1=316.5284 ucl_nua2=480.3126 lech=51.7%  DTHR1=44.9555,8.3520,16.0659,7.7868,39.1019,30.9085
+   in-sample   L4=7.47(fe 0.00) n=72  L6=3.84(fe 0.00) n=37  L8=2.08(fe 0.00) n=20
+   out-sample  L4=21.90(fe 0.10) n=211  L6=15.77(fe 0.10) n=152  L8=10.79(fe 0.00) n=104

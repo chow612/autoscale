@@ -1,0 +1,15 @@
+SCRIPT j_fit_20260828.py md5=596c8d4135dbf8252949af02153a7b48 dong=94
+tick vuot nguong: 1332   luoi chu ky [3560..3700] buoc 0.25
+
+CHU KY FIT      = 3636.00 s   (mo hinh cu 3622.50)
+PHA (mod chu ky)= 2820.0 s
+do bao phu      = 1120/1332 tick = 84.1% nam trong +-150 s quanh moc
+
+kiem lai bang moc MOI:
+khoi  n_moc  n_khop  lech_trung_vi_s
+1     24     16      -15.0
+2     23     23      -9.0
+3     24     23      +0.0
+
+do tan lech giua ba khoi = 15.0 s  (mo hinh cu: 534.3 s)
+KET LUAN: MOC MOI DUNG - dung cho j_uni/j_w2
