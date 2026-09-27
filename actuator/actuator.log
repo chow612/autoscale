@@ -1,0 +1,71 @@
+nohup: ignoring input
+INFO:     Started server process [3864133]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:janus-actuator:{"event":"reject","reason":"bad_signature","src":"127.0.0.1","ts":1789203111.7063944}
+INFO:     127.0.0.1:40848 - "POST /scale HTTP/1.1" 401 Unauthorized
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":5,"to":3,"ts":1789356522.9769557}
+INFO:     10.105.196.176:36348 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":5,"to":6,"ts":1789356541.1768935}
+INFO:     10.105.196.176:53814 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":6,"to":9,"ts":1789356844.6047347}
+INFO:     10.105.196.176:58310 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":3,"to":1,"ts":1789356964.8917036}
+INFO:     10.105.196.176:41716 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"balancereader","from":5,"to":4,"ts":1789357091.1904678}
+INFO:     10.105.196.176:40572 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"balancereader","from":4,"to":2,"ts":1789357418.6326048}
+INFO:     10.105.196.176:58652 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":5,"to":6,"ts":1789357556.9328587}
+INFO:     10.105.196.176:36894 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"balancereader","from":2,"to":3,"ts":1789357806.3166835}
+INFO:     10.105.196.176:54796 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"ledgerwriter","from":5,"to":7,"ts":1789357944.6084254}
+INFO:     10.105.196.176:36568 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":9,"to":4,"ts":1789358230.0489216}
+INFO:     10.105.196.176:60876 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":6,"to":2,"ts":1789358278.2782223}
+INFO:     10.105.196.176:58936 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":4,"to":5,"ts":1789358533.6632504}
+INFO:     10.105.196.176:55622 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":2,"to":3,"ts":1789358695.977063}
+INFO:     10.105.196.176:48920 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"balancereader","from":3,"to":2,"ts":1789358963.3713908}
+INFO:     10.105.196.176:47458 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"balancereader","from":2,"to":3,"ts":1789359305.816893}
+INFO:     10.105.196.176:49494 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":5,"to":2,"ts":1789359417.0933025}
+INFO:     10.105.196.176:52792 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"balancereader","from":3,"to":2,"ts":1789360050.7529073}
+INFO:     10.105.196.176:51032 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":3,"to":4,"ts":1789360597.368397}
+INFO:     10.105.196.176:59488 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":2,"to":3,"ts":1789378523.313589}
+INFO:     10.105.196.176:57002 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":4,"to":6,"ts":1789378526.4963176}
+INFO:     10.105.196.176:57002 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":5,"to":6,"ts":1789378526.6785326}
+INFO:     10.105.196.176:57002 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":6,"to":11,"ts":1789382193.002783}
+INFO:     10.105.196.176:43628 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":3,"to":8,"ts":1789385859.3670866}
+INFO:     10.105.196.176:32902 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"transactionhistory","from":8,"to":10,"ts":1789386457.0909414}
+INFO:     10.105.196.176:42848 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":1,"to":3,"ts":1789456783.8876452}
+INFO:     10.105.196.176:51590 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":6,"to":8,"ts":1789456805.1044135}
+INFO:     10.105.196.176:41846 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":3,"to":6,"ts":1789457937.2753978}
+INFO:     10.105.196.176:51704 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":1,"to":2,"ts":1789632031.1214817}
+INFO:     10.105.196.176:56804 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":1,"to":2,"ts":1789635387.1707888}
+INFO:     10.105.196.176:47858 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"contacts","from":8,"to":10,"ts":1789635414.385579}
+INFO:     10.105.196.176:35474 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":2,"to":4,"ts":1789635696.8237278}
+INFO:     10.105.196.176:41204 - "POST /scale HTTP/1.1" 200 OK
+INFO:janus-actuator:{"event":"applied","src":"10.105.196.176","namespace":"bank-of-anthos","deployment":"frontend","from":4,"to":5,"ts":1789729383.6547356}
+INFO:     10.105.196.176:58730 - "POST /scale HTTP/1.1" 200 OK
