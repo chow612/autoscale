@@ -1,0 +1,10 @@
+SCRIPT j_op_20260828.py md5=9d71c339f9b25f64f444db21bbf81aea dong=93  ban truoc: j_dthr_20260828.py
+W=240  FRZ=1  UCL=58.7343  FAR=1.0017%
+tick qua ba cong DCALIB: 71358/86343 (82.6%)
+
+DTHR = 24.8372,6.6410,11.5795,7.0127,26.4767,21.2709
+delta so env: cpu=-0.5% ram=+1.4% rps=+66.4% err=+2.4% asym=-5.4% slow=+5.8%
+do tap trung: cpu=17.2% ram=16.1% rps=17.5% err=14.8% asym=21.5% slow=12.9%
+cong 40%: DAT (max=21.5%)
+
+CAM VAO ENV: JANUS_W=240 JANUS_UCL=58.7343 JANUS_DTHR=24.8372,6.6410,11.5795,7.0127,26.4767,21.2709

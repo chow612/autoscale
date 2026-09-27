@@ -1,0 +1,117 @@
+import sys,j_replay as J
+
+D6=J.D6
+ND=J.ND
+DIMS=J.DIMS
+DEPS=J.DEPS
+
+
+def sf2_is_view(m):
+    o=m.SIGMA_FLOOR2[0]
+    m.SIGMA_FLOOR2[0]=o*2.0
+    ok=float(m.SF2[0])==o*2.0
+    m.SIGMA_FLOOR2[0]=o
+    return ok
+
+
+def floor_mult(m,idx,f):
+    if not sf2_is_view(m):
+        raise SystemExit('SF2 khong con la view cua SIGMA_FLOOR2 -> z va C lech he chuan hoa')
+    for i in idx:m.SIGMA_FLOOR2[i]*=f
+
+
+def wdist(R,cut,only_trig=1):
+    c=[0]*(D6+1);n=0
+    for k in range(cut,R['n']):
+        if only_trig and not R['trig'][k]:continue
+        w=R['wi'][k]
+        c[w if w>=0 else D6]+=1;n+=1
+    return c,n
+
+
+def show_wdist(tag,R,cut,only_trig=1):
+    c,n=wdist(R,cut,only_trig)
+    if not n:
+        print('%s: khong co tick'%tag);return
+    print('%s n=%d  '%(tag,n)+' '.join('%s=%.2f%%'%(DIMS[i],100.0*c[i]/n) for i in range(D6))
+          +' none=%.2f%%'%(100.0*c[D6]/n))
+
+
+def cmp2(L,cut,ea,eb,pa=None,pb=None,ka=None,kb=None):
+    ma=J.load(**ea);mb=J.load(**eb)
+    if pa:pa(ma)
+    if pb:pb(mb)
+    A=J.replay(L,ma,**(ka or {}))
+    B=J.replay(L,mb,**(kb or {}))
+    n=min(A['n'],B['n']);m=n-cut
+    er=[];fl=0;wf=0;df=0;ca=0;cb=0
+    for k in range(cut,n):
+        y=B['t2'][k]
+        if y>0.0:er.append(abs(A['t2'][k]-y)/y)
+        if A['trig'][k]:ca+=1
+        if B['trig'][k]:cb+=1
+        if A['trig'][k]!=B['trig'][k]:fl+=1
+        if A['wi'][k]!=B['wi'][k]:wf+=1
+        if A['wdep'][k]!=B['wdep'][k]:df+=1
+    print('n=%d'%m)
+    print('T2   relerr med=%.3e mad=%.3e p99=%.3e max=%.3e'%(
+        J.q(er,50),J.mad(er),J.q(er,99),max(er) if er else 0.0))
+    print('trig A=%.4f%% B=%.4f%%  d_trig=%+.4f pp  lech=%d tick'%(
+        100.0*ca/m,100.0*cb/m,100.0*(cb-ca)/m,fl))
+    print('lat  wi=%d (%.4f pp)   wdep=%d (%.4f pp)'%(wf,100.0*wf/m,df,100.0*df/m))
+    print('dec  A nfire=%d nev=%d reb=%d | B nfire=%d nev=%d reb=%d'%(
+        A['nfire'],A['nev'],A['reb'],B['nfire'],B['nev'],B['reb']))
+    show_wdist('argmax A',A,cut)
+    show_wdist('argmax B',B,cut)
+    return A,B
+
+
+def main():
+    a=sys.argv[1:]
+    if len(a)<2:
+        print('dung: j_invar.py LOG MODE [tham so]')
+        print('  floor DIMS MULT   vd: floor 4 4.0        (san SIGMA_FLOOR2, chi so 0..5)')
+        print('  ridge R           vd: ridge 0            (B dat MEWMA_RIDGE=R)')
+        print('  frz               A=bang bat, B=bang tat, ca hai mo phong')
+        print('  w   WA WB         vd: w 120 240')
+        print('  dthr CSV_A CSV_B  hai bo DTHR 6 so')
+        sys.exit(1)
+    path=a[0];mode=a[1];rest=a[2:]
+    ucl=50.0;w=120;cut=142
+    L=J.parse(path)
+    fl=J.frz_from_log(L)
+    base=dict(JANUS_W=w,JANUS_UCL=ucl)
+    kw=dict(frzin=fl,use_live=1)
+    print(J.ASSUM)
+    print('log=%s n_tick=%d mode=%s cut=%d'%(path,L.n,mode,cut))
+    if mode=='floor':
+        idx=[int(x) for x in rest[0].split(',')] if rest else [4]
+        f=float(rest[1]) if len(rest)>1 else 4.0
+        print('B: SIGMA_FLOOR2[%s] x %g'%(','.join(str(i) for i in idx),f))
+        cmp2(L,cut,base,base,None,lambda m:floor_mult(m,idx,f),kw,kw)
+    elif mode=='ridge':
+        r=float(rest[0]) if rest else 0.0
+        print('B: MEWMA_RIDGE=%g'%r)
+        cmp2(L,cut,base,base,None,lambda m:setattr(m,'MEWMA_RIDGE',r),kw,kw)
+    elif mode=='frz':
+        ka=dict(frzin=None,use_live=1,frz_on=1)
+        kb=dict(frzin=None,use_live=1,frz_on=0)
+        print('A: FRZ_ON=1 mo phong   B: FRZ_ON=0')
+        cmp2(L,cut,base,base,None,None,ka,kb)
+    elif mode=='w':
+        wa=int(rest[0]);wb=int(rest[1])
+        print('A: W=%d   B: W=%d'%(wa,wb))
+        cmp2(L,cut,dict(JANUS_W=wa,JANUS_UCL=ucl),dict(JANUS_W=wb,JANUS_UCL=ucl),
+             None,None,kw,kw)
+    elif mode=='dthr':
+        da=[float(x) for x in rest[0].split(',')]
+        db=[float(x) for x in rest[1].split(',')]
+        ka=dict(kw);ka['dthr']=da
+        kb=dict(kw);kb['dthr']=db
+        cmp2(L,cut,base,base,None,None,ka,kb)
+    else:
+        print('khong hieu mode:',mode);sys.exit(1)
+
+
+if __name__=='__main__':
+    main()

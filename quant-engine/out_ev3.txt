@@ -1,0 +1,11 @@
+SCRIPT j_ev3_20260828.py md5=0c7ae7c2ecf96aa16c7a35b007f3acf0 dong=80  ban truoc: j_ev2_20260828.py
+p99 tung chieu tren cua so sach:
+  cpu=3.5097 ram=1297427.5544 rps=513.0000 err=-2.4364 asym=-1.1361 slow=-0.6544
+
+gio_UTC              tick    chieu  dich_vu             T2      gia_tri   p99_chieu pct    ket
+2026-08-27T06:33:25Z  206240  cpu    userservice         319.9   6.3124    3.5097    100.0  THAT
+2026-08-27T06:38:25Z  206340  cpu    userservice         284.0   5.5763    3.5097    99.9   THAT
+
+tieu chi chot truoc: THAT <=> gia tri tho cua CHIEU DUOC QUY KET > p99 cua chieu do
+=> 2/2 su kien ngoai mat na dat
+   KET LUAN: KHONG co duong tinh gia nao o cau hinh nay
